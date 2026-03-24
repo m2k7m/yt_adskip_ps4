@@ -98,6 +98,30 @@
     tryPort(4040);
   }
 
+  function loadRYD(videoId) {
+    if (!videoId) return;
+    try {
+      var xhr = new XMLHttpRequest();
+      var url = 'http://127.0.0.1:4040/ryd/' + encodeURIComponent(videoId);
+      xhr.timeout = 2000;
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          try {
+            var data = origParse(xhr.responseText);
+            if (data && data.dislikes !== undefined) {
+              // convert to K format if over 999 for compact display
+              var dislikesStr = data.dislikes > 999 ? (data.dislikes/1000).toFixed(1) + 'K' : data.dislikes;
+              // TODO: add dislike count to the video page itself instead of just a toast (would require more complex DOM manipulation)
+              showToast('YouTube Dislike', '👎 ' + dislikesStr + ' Dislikes');
+            }
+          } catch(e) {}
+        }
+      };
+      xhr.open('GET', url, true);
+      xhr.send();
+    } catch(e) {}
+  }
+
   // Event-driven skip scheduling (adapted from TizenTube)
   function scheduleSkip() {
     if (skipTimeout) {
@@ -198,6 +222,7 @@
       skippedMap = {};
       attachVideo();
       loadSponsorBlock(videoId);
+      loadRYD(videoId);
     }
   }
 

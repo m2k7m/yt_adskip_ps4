@@ -179,6 +179,53 @@ static bool fetch_sponsorblock(const char* video_id, char* response_buf, size_t 
     return success;
 }
 
+// Fetch from Return YouTube Dislike API using sceHttp
+static bool fetch_ryd(const char* video_id, char* response_buf, size_t buf_size) {
+    char url[512];
+    snprintf(url, sizeof(url),
+             "https://returnyoutubedislikeapi.com/votes?videoId=%s",
+             video_id);
+
+    PROXY_LOG("Fetching RYD: %s", url);
+
+    int32_t tmpl_id = sceHttpCreateTemplate(g_http_ctx_id, "RYD-PS4/1.0", 1, 0);
+    if (tmpl_id < 0) return false;
+
+    sceHttpsSetSslCallback(tmpl_id, ssl_callback, NULL);
+    sceHttpSetAutoRedirect(tmpl_id, 1);
+    sceHttpSetResponseHeaderMaxSize(tmpl_id, 16 * 1024);
+    
+    int32_t conn_id = sceHttpCreateConnectionWithURL(tmpl_id, url, 0);
+    if (conn_id < 0) { sceHttpDeleteTemplate(tmpl_id); return false; }
+
+    int32_t req_id = sceHttpCreateRequestWithURL(conn_id, 0, url, 0);
+    if (req_id < 0) { sceHttpDeleteConnection(conn_id); sceHttpDeleteTemplate(tmpl_id); return false; }
+
+    int32_t ret = sceHttpSendRequest(req_id, NULL, 0);
+    if (ret < 0) { sceHttpDeleteRequest(req_id); sceHttpDeleteConnection(conn_id); sceHttpDeleteTemplate(tmpl_id); return false; }
+
+    int32_t status_code = 0;
+    sceHttpGetStatusCode(req_id, &status_code);
+
+    bool success = false;
+    if (status_code == 200) {
+        size_t total_read = 0;
+        while (total_read < buf_size - 1) {
+            int32_t read_size = sceHttpReadData(req_id, response_buf + total_read, buf_size - total_read - 1);
+            if (read_size <= 0) break;
+            total_read += read_size;
+        }
+        response_buf[total_read] = '\0';
+        success = total_read > 0;
+    }
+
+    sceHttpDeleteRequest(req_id);
+    sceHttpDeleteConnection(conn_id);
+    sceHttpDeleteTemplate(tmpl_id);
+
+    return success;
+}
+
 // Handle proxy client request
 static void handle_client(OrbisNetId client_sock) {
     char request_buf[BUFFER_SIZE];
@@ -204,13 +251,20 @@ static void handle_client(OrbisNetId client_sock) {
     }
 
     char video_id[32] = {0};
-    sscanf(get_line, "GET /%31s HTTP", video_id);
+    char api_response[4096] = {0};
+    bool success = false;
 
-    PROXY_LOG("Video ID: %s", video_id);
-
-    // Fetch from SponsorBlock
-    char sb_response[4096] = {0};
-    bool success = fetch_sponsorblock(video_id, sb_response, sizeof(sb_response));
+    if (strncmp(get_line, "GET /ryd/", 9) == 0) {
+        // RYD Request
+        sscanf(get_line, "GET /ryd/%31s HTTP", video_id);
+        PROXY_LOG("RYD Video ID: %s", video_id);
+        success = fetch_ryd(video_id, api_response, sizeof(api_response));
+    } else {
+        // SponsorBlock Request (Default)
+        sscanf(get_line, "GET /%31s HTTP", video_id);
+        PROXY_LOG("SponsorBlock Video ID: %s", video_id);
+        success = fetch_sponsorblock(video_id, api_response, sizeof(api_response));
+    }
 
     if (success) {
         // Send HTTP response
