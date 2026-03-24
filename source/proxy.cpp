@@ -275,7 +275,7 @@ static void handle_client(OrbisNetId client_sock) {
                  "Content-Length: %zu\r\n"
                  "\r\n"
                  "%s",
-                 strlen(sb_response), sb_response);
+                 strlen(api_response), api_response);
     } else {
         snprintf(response_buf, sizeof(response_buf),
                  "HTTP/1.1 404 Not Found\r\n"
